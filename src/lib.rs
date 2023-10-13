@@ -1,9 +1,9 @@
 //! Example crate demonstrating how to use nom to parse `/proc/mounts`.
 //! Browse crates.io for sys-mount, proc-mounts, and libmount for more stable, usable crates.
 
-// Needed to use traits associated with std::io::BufReader.
-use std::io::BufRead;
-use std::io::Read;
+use std::fs::File;
+// BufRead needed for line-by-line reading of BufReader
+use std::io::{self, BufRead, BufReader, Lines};
 
 /// Type-erased errors.
 pub type BoxError = Box<dyn
@@ -45,67 +45,27 @@ impl std::fmt::Display for Mount {
     }
 }
 
-/// Structure that accesses `/proc/mounts` and iterates over the contained mounts.
+/// An iterator over the mounts contained in `/proc/mounts`.
 ///
-/// You can generate an instance by calling [Mounts::new()] or the convenience method [mounts()].
-/// Instantiation may fail if `/proc/mounts` does not exist or you do not have access to read it.
-/// You can access each individual mount through an iterator with
-/// [Mounts::into_iter()](IntoIterator::into_iter) for a consuming iterator or [Mounts::iter_mut()]
-/// for a mutable iterator. Note that there is no immutable borrowed iterator `Mounts::iter()`. An
-/// instance of `Mounts` really isn't useful for anything except iterating over the contained
-/// mounts.
-///
-/// # Examples
-/// ```
-/// use nom_tutorial;
-/// for mount in nom_tutorial::mounts().unwrap() {
-///   println!("{}", mount.unwrap());
-/// }
+/// See [mounts()] for details.
 pub struct Mounts {
-    buf_reader: std::io::BufReader<std::fs::File>
+    lines: Lines<BufReader<File>>
 }
 
 impl Mounts {
-    /// Returns a new Mounts instance. You can also call [mounts()] for convenience.
-    pub fn new() -> Result<Mounts, std::io::Error> {
-        let file = std::fs::File::open("/proc/mounts")?;
-        Ok( Mounts { buf_reader: std::io::BufReader::new(file) } )
+    /// Returns a new Mounts instance (private).
+    fn new() -> Result<Mounts, io::Error> {
+        let file = File::open("/proc/mounts")?;
+        Ok( Mounts { lines: BufReader::new(file).lines() } )
     }
 }
 
-impl IntoIterator for Mounts {
-    type Item = Result<Mount, BoxError>;
-    type IntoIter = MountsIntoIterator;
-
-    /// Consuming iterator, used similarly to mutable iterator.
-    /// See [Mounts::iter_mut()] for example.
-    fn into_iter(self) -> Self::IntoIter {
-        MountsIntoIterator { lines: self.buf_reader.lines() }
-    }
-}
-
-impl<'a> IntoIterator for &'a mut Mounts {
-    type Item = Result<Mount, BoxError>;
-    type IntoIter = MountsIteratorMut<'a>;
-
-    /// Mutable iterator, see [Mounts::iter_mut()].
-    fn into_iter(self) -> Self::IntoIter {
-        MountsIteratorMut { lines: self.buf_reader.by_ref().lines() }
-    }
-}
-
-/// Consuming iterator for [Mounts].
-pub struct MountsIntoIterator {
-    lines: std::io::Lines<std::io::BufReader<std::fs::File>>
-}
-
-impl Iterator for MountsIntoIterator {
+impl Iterator for Mounts {
     type Item = Result<Mount, BoxError>;
 
     /// Returns the next line in `/proc/mounts` as a [Mount]. If there is a problem
     /// reading or parsing `/proc/mounts`, returns an error. In the case of a parsing
     /// error we use [nom::Err::to_owned()] to allow the returned error to outlive `line`.
-    /// See [Mounts::iter_mut()] for an analogous example using a mutable iterator.
     fn next(&mut self) -> Option<Self::Item> {
         match self.lines.next() {
             Some(line) => match line {
@@ -117,51 +77,6 @@ impl Iterator for MountsIntoIterator {
             },
             None => None
         }
-    }
-}
-
-/// Mutable iterator for `Mounts`.
-pub struct MountsIteratorMut<'a> {
-    lines: std::io::Lines<&'a mut std::io::BufReader<std::fs::File>>
-}
-
-impl<'a> Iterator for MountsIteratorMut<'a> {
-    type Item = Result<Mount, BoxError>;
-
-    // Returns the next line in `/proc/mounts` as a [Mount].
-    // See [Mounts::iter_mut()] for an example.
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.lines.next() {
-            Some(line) => match line {
-                Ok(line) => match parsers::parse_line(&line[..]) {
-                    Ok( (_, m) ) => Some(Ok(m)),
-                    Err(e) => Some(Err(e.to_owned().into()))
-                },
-                Err(e) => Some(Err(e.into()))
-            },
-            None => None
-        }
-    }
-}
-
-impl<'a> Mounts {
-    // There is no non-mutable iterator.
-
-    /// Mutable iterator.
-    /// # Examples
-    /// ```
-    /// use nom_tutorial;
-    /// let mut iter = nom_tutorial::mounts().expect("Couldn't access /proc/mounts.").into_iter();
-    /// match iter.next() {
-    ///     Some(m) => match m {
-    ///         Ok(m) => eprintln!("Here is a mounted filesystem: {}", m),
-    ///         Err(e) => eprintln!("There was an error parsing the next line in /proc/mounts: {}", e)
-    ///     },
-    ///     None => eprintln!("There are no mounted filesystems.")
-    /// }
-    /// ```
-    pub fn iter_mut(&'a mut self) -> MountsIteratorMut<'a> {
-        self.into_iter()
     }
 }
 
@@ -394,7 +309,27 @@ mod parsers {
     }
 }
 
-/// Convenience method equivalent to `Mounts::new()`.
-pub fn mounts() -> Result<Mounts, std::io::Error> {
+/// Returns an iterator over the mounts contained in `/proc/mounts`.
+///
+/// Instantiation may fail if `/proc/mounts` does not exist or you do not have access to read it.
+/// You can access each individual mount through [Iterator::next()].
+///
+/// # Examples
+/// ```
+/// use nom_tutorial;
+/// for mount in nom_tutorial::mounts().unwrap() {
+///   println!("{}", mount.unwrap());
+/// }
+///
+/// let mut iter = nom_tutorial::mounts().expect("Couldn't access /proc/mounts.");
+/// match iter.next() {
+///     Some(m) => match m {
+///         Ok(m) => eprintln!("Here is a mounted filesystem: {}", m),
+///         Err(e) => eprintln!("There was an error parsing the next line in /proc/mounts: {}", e)
+///     },
+///     None => eprintln!("There are no mounted filesystems.")
+/// }
+/// ```
+pub fn mounts() -> Result<Mounts, io::Error> {
     Mounts::new()
 }
