@@ -165,10 +165,10 @@ impl<'a> Mounts {
     }
 }
 
-// Encapsulate individual nom parsers in a private submodule. The `pub(self)` keyword allows the
-// inner function [parsers::parse_line()] to be called by code within this module, but not by users
+// Encapsulate individual nom parsers in a private submodule. The inner pub function
+// [parsers::parse_line()] can be called by code within this module, but not by users
 // of our crate.
-pub(self) mod parsers {
+mod parsers {
     use super::Mount;
     use nom::branch::alt;
     use nom::bytes::complete::{escaped_transform, is_not, tag};
