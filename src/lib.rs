@@ -72,16 +72,17 @@ impl Iterator for Mounts {
     /// reading or parsing `/proc/mounts`, returns an error. In the case of a parsing
     /// error we use [nom::Err::to_owned()] to allow the returned error to outlive `line`.
     fn next(&mut self) -> Option<Self::Item> {
-        match self.lines.next() {
-            Some(line) => match line {
-                Ok(line) => match parsers::parse_line(&line[..]) {
-                    Ok( (_, m) ) => Some(Ok(m)),
-                    Err(e) => Some(Err(e.to_owned().into()))
-                },
-                Err(e) => Some(Err(e.into()))
-            },
-            None => None
-        }
+        let line = self.lines.next()?;
+
+        let result: Result<Mount, BoxError> = line
+            .map_err(|e: io::Error| e.into())
+            .and_then(|line| {
+                parsers::parse_line(&line)
+                    .map(|(_, mnt)| mnt)
+                    .map_err(|e: parsers::NomError<&str>| e.to_owned().into())
+            });
+
+        Some(result)
     }
 }
 
@@ -98,7 +99,7 @@ mod parsers {
     use nom::sequence::tuple;
     use nom::IResult;
 
-    type NomError<I> = nom::Err<(I, nom::error::ErrorKind)>;
+    pub type NomError<I> = nom::Err<(I, nom::error::ErrorKind)>;
 
     #[inline(always)]
     fn nom_parse_error<I>(input: I, kind: nom::error::ErrorKind) -> NomError<I> {
