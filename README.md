@@ -76,13 +76,13 @@ In your new project, edit `main.rs` to contain the following:
 extern crate nom;
 
 fn hello_parser(i: &str) -> nom::IResult<&str, &str> {
-	nom::bytes::complete::tag("hello")(i)
+    nom::bytes::complete::tag("hello")(i)
 }
 
 fn main() {
-	println!("{:?}", hello_parser("hello"));
-	println!("{:?}", hello_parser("hello world"));
-	println!("{:?}", hello_parser("goodbye hello again"));
+    println!("{:?}", hello_parser("hello"));
+    println!("{:?}", hello_parser("hello world"));
+    println!("{:?}", hello_parser("goodbye hello again"));
 }
 ```
 Compile and run the program:
@@ -106,7 +106,7 @@ In the [previous section](#chap2) we added nom as a dependency in `Cargo.toml`. 
 
 ```rust
 fn hello_parser(i: &str) -> nom::IResult<&str, &str> {
-	nom::bytes::complete::tag("hello")(i)
+    nom::bytes::complete::tag("hello")(i)
 }
 ```
 This creates a function called `hello_parser` that takes a `&str` (borrowed string slice) as its input and returns a type `nom::IResult<&str, &str>`, which we'll talk more about later.  Within the body of the function we create a nom tag parser.  A tag parser recognizes a literal string, or "tag", of text.  The tag parser `tag("hello")` is a function object that recognizes the text "hello".  We then call the tag parser with the input string as its argument and return the result.  (Remember, in Rust you can omit the `return` keyword from the last line in a function.)
@@ -179,9 +179,9 @@ Unfortunately, many Rust tutorials handle potential errors by having you write `
 
 /// Type-erased errors.
 pub type BoxError = std::boxed::Box<dyn
-	std::error::Error   // must implement Error to satisfy ?
-	+ std::marker::Send // needed for threads
-	+ std::marker::Sync // needed for threads
+    std::error::Error   // must implement Error to satisfy ?
+    + std::marker::Send // needed for threads
+    + std::marker::Sync // needed for threads
 >;
 ```
 ```rust
@@ -191,8 +191,8 @@ extern crate nom_example;
 use nom_example::BoxError;
 
 fn main() -> std::result::Result<(), BoxError> {
-	// Inside the body of main we can now use the ? operator.
-	Ok(())
+    // Inside the body of main we can now use the ? operator.
+    Ok(())
 }
 
 ```
@@ -211,10 +211,10 @@ When we parse a line in `/proc/mounts` we are going to want to parse it _into_ s
 ```rust
 #[derive(Clone, Default, Debug)]
 pub struct Mount {
-	pub device: std::string::String,
-	pub mount_point: std::string::String,
-	pub file_system_type: std::string::String,
-	pub options: std::vec::Vec<std::string::String>,
+    pub device: std::string::String,
+    pub mount_point: std::string::String,
+    pub file_system_type: std::string::String,
+    pub options: std::vec::Vec<std::string::String>,
 }
 ```
 
@@ -229,23 +229,23 @@ That means that each item within the line is simply a sequence of characters/byt
 
 ```rust
 pub(self) mod parsers {
-	use super::Mount;
+    use super::Mount;
 
-	fn not_whitespace(i: &str) -> nom::IResult<&str, &str> {
-		nom::bytes::complete::is_not(" \t")(i)
-	}
-	
-	#[cfg(test)]
-	mod tests {
-		use super::*;
-		
-		#[test]
-		fn test_not_whitespace() {
-			assert_eq!(not_whitespace("abcd efg"), Ok((" efg", "abcd")));
-			assert_eq!(not_whitespace("abcd\tefg"), Ok(("\tefg", "abcd")));
-			assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", nom::error::ErrorKind::IsNot))));
-		}
-	}
+    fn not_whitespace(i: &str) -> nom::IResult<&str, &str> {
+        nom::bytes::complete::is_not(" \t")(i)
+    }
+    
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        
+        #[test]
+        fn test_not_whitespace() {
+            assert_eq!(not_whitespace("abcd efg"), Ok((" efg", "abcd")));
+            assert_eq!(not_whitespace("abcd\tefg"), Ok(("\tefg", "abcd")));
+            assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", nom::error::ErrorKind::IsNot))));
+        }
+    }
 }
 ```
 The core of this parser is `nom::bytes::complete::is_not(" \t")` which is a nom parser that recognizes one or more bytes that is not a space or tab -- i.e. is not whitespace, exactly what we want!  If the syntax for creating a custom parser (here named `not_whitespace`) doesn't look familiar to you then go back to the [Hello Parser](#chap3) example.
@@ -298,42 +298,42 @@ Fortunately, nom already has a built-in parser for dealing with escaped sequence
 
 ```rust
 pub(self) mod parsers {
-	// ...
-	
-	fn escaped_space(i: &str) -> nom::IResult<&str, &str> {
-		nom::combinator::value(" ", nom::bytes::complete::tag("040"))(i)
-	}
-	
-	fn escaped_backslash(i: &str) -> nom::IResult<&str, &str> {
-		nom::combinator::recognize(nom::character::complete::char('\\'))(i)
-	}
-	
-	fn transform_escaped(i: &str) -> nom::IResult<&str, std::string::String> {
-		nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', nom::branch::alt((escaped_backslash, escaped_space)))(i)	
-	}
-	
-	#[cfg(test)]
-	mod tests {
-		// ...
-		
-		#[test]
-		fn test_escaped_space() {
-			assert_eq!(escaped_space("040"), Ok(("", " ")));
-			assert_eq!(escaped_space(" "), Err(nom::Err::Error((" ", nom::error::ErrorKind::Tag))));
-		}
-		
-		#[test]
-		fn test_escaped_backslash() {
-			assert_eq!(escaped_backslash("\\"), Ok(("", "\\")));
-			assert_eq!(escaped_backslash("not a backslash"), Err(nom::Err::Error(("not a backslash", nom::error::ErrorKind::Char))));
-		}
-		
-		#[test]
-		fn test_transform_escaped() {
-			assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", std::string::String::from("abc def\\g h"))));
-			assert_eq!(transform_escaped("\\bad"), Err(nom::Err::Error(("bad", nom::error::ErrorKind::Tag))));
-		}
-	}
+    // ...
+    
+    fn escaped_space(i: &str) -> nom::IResult<&str, &str> {
+        nom::combinator::value(" ", nom::bytes::complete::tag("040"))(i)
+    }
+    
+    fn escaped_backslash(i: &str) -> nom::IResult<&str, &str> {
+        nom::combinator::recognize(nom::character::complete::char('\\'))(i)
+    }
+    
+    fn transform_escaped(i: &str) -> nom::IResult<&str, std::string::String> {
+        nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', nom::branch::alt((escaped_backslash, escaped_space)))(i)    
+    }
+    
+    #[cfg(test)]
+    mod tests {
+        // ...
+        
+        #[test]
+        fn test_escaped_space() {
+            assert_eq!(escaped_space("040"), Ok(("", " ")));
+            assert_eq!(escaped_space(" "), Err(nom::Err::Error((" ", nom::error::ErrorKind::Tag))));
+        }
+        
+        #[test]
+        fn test_escaped_backslash() {
+            assert_eq!(escaped_backslash("\\"), Ok(("", "\\")));
+            assert_eq!(escaped_backslash("not a backslash"), Err(nom::Err::Error(("not a backslash", nom::error::ErrorKind::Char))));
+        }
+        
+        #[test]
+        fn test_transform_escaped() {
+            assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", std::string::String::from("abc def\\g h"))));
+            assert_eq!(transform_escaped("\\bad"), Err(nom::Err::Error(("bad", nom::error::ErrorKind::Tag))));
+        }
+    }
 }
 ```
 
@@ -345,10 +345,10 @@ The `escaped_space` parser uses `nom::combinator::value`, which returns the spec
 
 ```rust
 fn escaped_space(i: &str) -> nom::IResult<&str, &str> {
-	match nom::bytes::complete::tag("040")(i) {
-		Ok((remaining_input, _)) => Ok((remaining_input, " ")),
-		Err(e) => Err(e)
-	}
+    match nom::bytes::complete::tag("040")(i) {
+        Ok((remaining_input, _)) => Ok((remaining_input, " ")),
+        Err(e) => Err(e)
+    }
 }
 ```
 But nom provides us with a lot of convenient parsers like `combinator::value` out-of-the-box to make our lives easier.
@@ -358,7 +358,7 @@ But nom provides us with a lot of convenient parsers like `combinator::value` ou
 With our simpler sub-parsers written and tested, it is now easy to use the `escaped_transform` parser.  If we were only escaping `\040` and didn't care about `\\` then we could have written it as:
 
 ```rust
-nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', escaped_space)(i)	
+nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', escaped_space)(i)    
 ```
 `escaped_transform` takes two parsers and a `char` as arguments:
 
@@ -387,27 +387,27 @@ We're almost there.  We have to define one more custom parser before we assemble
 
 ```rust
 pub(self) mod parsers {
-	// ...
-	
-	fn mount_opts(i: &str) -> nom::IResult<&str, std::vec::Vec<std::string::String>> {
-		nom::multi::separated_list(
-			nom::character::complete::char(','),
-			nom::combinator::map_parser(
-				nom::bytes::complete::is_not(", \t"),
-				transform_escaped
-			)
-		)(i)
-	}
-	
-	#[cfg(test)]
-	mod tests {
-		// ...
-		
-		#[test]
-		fn test_mount_opts() {
-			assert_eq!(mount_opts("a,bc,d\\040e"), Ok(("", vec!["a".to_string(), "bc".to_string(), "d e".to_string()])));
-		}
-	}
+    // ...
+    
+    fn mount_opts(i: &str) -> nom::IResult<&str, std::vec::Vec<std::string::String>> {
+        nom::multi::separated_list(
+            nom::character::complete::char(','),
+            nom::combinator::map_parser(
+                nom::bytes::complete::is_not(", \t"),
+                transform_escaped
+            )
+        )(i)
+    }
+    
+    #[cfg(test)]
+    mod tests {
+        // ...
+        
+        #[test]
+        fn test_mount_opts() {
+            assert_eq!(mount_opts("a,bc,d\\040e"), Ok(("", vec!["a".to_string(), "bc".to_string(), "d e".to_string()])));
+        }
+    }
 }
 ```
 As you can see from the return type of `mount_opts` we are going to generate a `Vec<String>` just like we promised.  The parser `multi::separated_list` does just that, parsing a list separated by some parser with elements that match some other parser into a vector.
@@ -424,71 +424,71 @@ This tutorial may have felt like a lot of coding with no end in sight.  Now that
 
 ```rust
 pub(self) mod parsers {
-	// ...
-	
-	pub fn parse_line(i: &str) -> nom::IResult<&str, Mount> {
-		match nom::combinator::all_consuming(nom::sequence::tuple((
-			/* part 1 */
-			nom::combinator::map_parser(not_whitespace, transform_escaped), // device
-			nom::character::complete::space1,
-			nom::combinator::map_parser(not_whitespace, transform_escaped), // mount_point
-			nom::character::complete::space1,
-			not_whitespace, // file_system_type
-			nom::character::complete::space1,
-			mount_opts, // options
-			nom::character::complete::space1,
-			nom::character::complete::char('0'),
-			nom::character::complete::space1,
-			nom::character::complete::char('0'),
-			nom::character::complete::space0,
-		)))(i) {
-				/* part 2 */
-				Ok((remaining_input, (
-				device,
-				_, // whitespace
-				mount_point,
-				_, // whitespace
-				file_system_type,
-				_, // whitespace
-				options,
-				_, // whitespace
-				_, // 0
-				_, // whitespace
-				_, // 0
-				_, // optional whitespace
-			))) => {
-				/* part 3 */
-				Ok((remaining_input, Mount { 
-					device: device,
-					mount_point: mount_point,
-					file_system_type: file_system_type.to_string(),
-					options: options
-				}))
-			}
-			Err(e) => Err(e)
-		}
-	}
-	
-	#[cfg(test)]
-	mod tests {
-		// ...
-		
-		#[test]
-		fn test_parse_line() {
-			let mount1 = Mount{
-				device: "device".to_string(),
-				mount_point: "mount_point".to_string(),
-				file_system_type: "file_system_type".to_string(),
-				options: vec!["options".to_string(), "a".to_string(), "b=c".to_string(), "d e".to_string()]
-			};
-			let (_, mount2) = parse_line("device mount_point file_system_type options,a,b=c,d\\040e 0 0").unwrap();
-			assert_eq!(mount1.device, mount2.device);
-			assert_eq!(mount1.mount_point, mount2.mount_point);
-			assert_eq!(mount1.file_system_type, mount2.file_system_type);
-			assert_eq!(mount1.options, mount2.options);
-		}
-	
-	}
+    // ...
+    
+    pub fn parse_line(i: &str) -> nom::IResult<&str, Mount> {
+        match nom::combinator::all_consuming(nom::sequence::tuple((
+            /* part 1 */
+            nom::combinator::map_parser(not_whitespace, transform_escaped), // device
+            nom::character::complete::space1,
+            nom::combinator::map_parser(not_whitespace, transform_escaped), // mount_point
+            nom::character::complete::space1,
+            not_whitespace, // file_system_type
+            nom::character::complete::space1,
+            mount_opts, // options
+            nom::character::complete::space1,
+            nom::character::complete::char('0'),
+            nom::character::complete::space1,
+            nom::character::complete::char('0'),
+            nom::character::complete::space0,
+        )))(i) {
+                /* part 2 */
+                Ok((remaining_input, (
+                device,
+                _, // whitespace
+                mount_point,
+                _, // whitespace
+                file_system_type,
+                _, // whitespace
+                options,
+                _, // whitespace
+                _, // 0
+                _, // whitespace
+                _, // 0
+                _, // optional whitespace
+            ))) => {
+                /* part 3 */
+                Ok((remaining_input, Mount { 
+                    device: device,
+                    mount_point: mount_point,
+                    file_system_type: file_system_type.to_string(),
+                    options: options
+                }))
+            }
+            Err(e) => Err(e)
+        }
+    }
+    
+    #[cfg(test)]
+    mod tests {
+        // ...
+        
+        #[test]
+        fn test_parse_line() {
+            let mount1 = Mount{
+                device: "device".to_string(),
+                mount_point: "mount_point".to_string(),
+                file_system_type: "file_system_type".to_string(),
+                options: vec!["options".to_string(), "a".to_string(), "b=c".to_string(), "d e".to_string()]
+            };
+            let (_, mount2) = parse_line("device mount_point file_system_type options,a,b=c,d\\040e 0 0").unwrap();
+            assert_eq!(mount1.device, mount2.device);
+            assert_eq!(mount1.mount_point, mount2.mount_point);
+            assert_eq!(mount1.file_system_type, mount2.file_system_type);
+            assert_eq!(mount1.options, mount2.options);
+        }
+    
+    }
 }
 ```
 Wow, that's a lot of code!  Taking a birds-eye view, notice that `parse_line` returns a `Mount`.  Also notice that it's `pub` since this is the one parser we'll want to call from outside the `parsers` module.  Let's break up the details into 3 parts (labeled by comments in the code):
@@ -506,26 +506,26 @@ I've received what I think is valid feedback that the final parser above is too 
 
 ```rust
 pub fn parse_line_alternate(i: &str) -> nom::IResult<&str, Mount> {
-	let (i, device) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // device
-	let (i, _) = nom::character::complete::space1(i)?;
-	let (i, mount_point) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // mount_point
-	let (i, _) = nom::character::complete::space1(i)?;
-	let (i, file_system_type) = not_whitespace(i)?; // file_system_type
-	let (i, _) = nom::character::complete::space1(i)?;
-	let (i, options) = mount_opts(i)?; // options
-	let (i, _) = nom::combinator::all_consuming(nom::sequence::tuple((
-		nom::character::complete::space1,
-		nom::character::complete::char('0'),
-		nom::character::complete::space1,
-		nom::character::complete::char('0'),
-		nom::character::complete::space0
-	)))(i)?;
-	Ok((i, Mount {
-		device: device,
-		mount_point: mount_point,
-		file_system_type: file_system_type.to_string(),
-		options:options
-	}))
+    let (i, device) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // device
+    let (i, _) = nom::character::complete::space1(i)?;
+    let (i, mount_point) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // mount_point
+    let (i, _) = nom::character::complete::space1(i)?;
+    let (i, file_system_type) = not_whitespace(i)?; // file_system_type
+    let (i, _) = nom::character::complete::space1(i)?;
+    let (i, options) = mount_opts(i)?; // options
+    let (i, _) = nom::combinator::all_consuming(nom::sequence::tuple((
+        nom::character::complete::space1,
+        nom::character::complete::char('0'),
+        nom::character::complete::space1,
+        nom::character::complete::char('0'),
+        nom::character::complete::space0
+    )))(i)?;
+    Ok((i, Mount {
+        device: device,
+        mount_point: mount_point,
+        file_system_type: file_system_type.to_string(),
+        options:options
+    }))
 }
 ```
 
@@ -543,17 +543,17 @@ use std::io::BufRead;
 use std::io::Read;
 
 pub fn mounts() -> Result<(), BoxError> {
-	let file = std::fs::File::open("/proc/mounts")?;
-	let buf_reader = std::io::BufReader::new(file);
-	for line in buf_reader.lines() {
-		match parsers::parse_line(&line?[..]) {
-			Ok( (_, m) ) => {
-				println!("{}", m);
-			},
-			Err(_) => return Err(ParseError::default().into())
-		}
-	}
-	Ok(())
+    let file = std::fs::File::open("/proc/mounts")?;
+    let buf_reader = std::io::BufReader::new(file);
+    for line in buf_reader.lines() {
+        match parsers::parse_line(&line?[..]) {
+            Ok( (_, m) ) => {
+                println!("{}", m);
+            },
+            Err(_) => return Err(ParseError::default().into())
+        }
+    }
+    Ok(())
 }
 ```
 `main.rs`
@@ -562,8 +562,8 @@ pub fn mounts() -> Result<(), BoxError> {
 extern crate nom_tutorial;
 
 fn main() -> std::result::Result<(), BoxError> {
-	nom_tutorial::mounts()?
-	Ok(())
+    nom_tutorial::mounts()?
+    Ok(())
 }
 ```
 We open the file `/proc/mounts`, created a `BufReader` to read it line-by-line, and then parse each line.  If parsing leads to an error we convert that into our custom error type `ParseError` [defined earlier](#chap5).  If parsing is successful (which it should be) we print the `Mount` option out on a new line.  To try it out:
@@ -584,10 +584,10 @@ From the standpoint of splitting our parser into a library and a binary, simply 
 extern crate nom_tutorial;
 
 fn main() -> std::result::Result<(), BoxError> {
-	for mount in nom_tutorial::mounts()? {
-		println!("{}", mount?);
-	}
-	Ok(())
+    for mount in nom_tutorial::mounts()? {
+        println!("{}", mount?);
+    }
+    Ok(())
 }
 ```
 To see how powerful this is we can play around a little:
@@ -596,11 +596,11 @@ To see how powerful this is we can play around a little:
 extern crate nom_tutorial;
 
 fn main() -> std::result::Result<(), BoxError> {
-	for mount in nom_tutorial::mounts()? {
-		let mount = mount?; // Result --> Mount
-		println!("The device \"{}\" is mounted at \"{}\".", mount.device, mount.mount_point);
-	}
-	Ok(())
+    for mount in nom_tutorial::mounts()? {
+        let mount = mount?; // Result --> Mount
+        println!("The device \"{}\" is mounted at \"{}\".", mount.device, mount.mount_point);
+    }
+    Ok(())
 }
 ````
 
@@ -615,26 +615,26 @@ Unfortunately, there is a fair bit of boilerplate code needed to write a custom 
 extern crate nom_tutorial;
 
 fn main() -> std::result::Result<(), BoxError> {
-	let mounts = nom_tutorial::mounts()?;
-	
-	// Do it once
-	for mount in mounts {
-		println!("{}", mount?);
-	}
-	
-	// Do it again
-	// Fails because we already consumed mounts in the previous for loop
-	for mount in mounts {
-		println!("{}", mount?);
-	}
-	
-	// Do it again
-	// Works because we get a new instance of Mounts
-	// Internally works because we get a new file handle on /proc/mounts
-	for mount in nom_tutorial::mounts()? {
-		println!("{}", mount?);
-	}
-	Ok(())
+    let mounts = nom_tutorial::mounts()?;
+    
+    // Do it once
+    for mount in mounts {
+        println!("{}", mount?);
+    }
+    
+    // Do it again
+    // Fails because we already consumed mounts in the previous for loop
+    for mount in mounts {
+        println!("{}", mount?);
+    }
+    
+    // Do it again
+    // Works because we get a new instance of Mounts
+    // Internally works because we get a new file handle on /proc/mounts
+    for mount in nom_tutorial::mounts()? {
+        println!("{}", mount?);
+    }
+    Ok(())
 }
 ```
 
