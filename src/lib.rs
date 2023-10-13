@@ -178,6 +178,13 @@ mod parsers {
     use nom::multi::separated_list;
     use nom::sequence::tuple;
 
+    type NomError<I> = nom::Err<(I, nom::error::ErrorKind)>;
+
+    #[inline(always)]
+    fn nom_parse_error<I>(input: I, kind: nom::error::ErrorKind) -> NomError<I> {
+        nom::Err::Error((input, kind))
+    }
+
     /// Extracts a string that does not contain whitespace (space or tab). Anything else goes.
     fn not_whitespace(i: &str) -> IResult<&str, &str> {
         is_not(" \t")(i)
@@ -318,21 +325,24 @@ mod parsers {
         fn test_not_whitespace() {
             assert_eq!(not_whitespace("abcd efg"), Ok((" efg", "abcd")));
             assert_eq!(not_whitespace("abcd\tefg"), Ok(("\tefg", "abcd")));
-            assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", ErrorKind::IsNot))));
+            let error = nom_parse_error(" abcdefg", ErrorKind::IsNot);
+            assert_eq!(not_whitespace(" abcdefg"), Err(error));
         }
 
         // Converts 040 to a space. Does not actually recognize a literal space.
         #[test]
         fn test_escaped_space() {
             assert_eq!(escaped_space("040"), Ok(("", " ")));
-            assert_eq!(escaped_space(" "), Err(nom::Err::Error((" ", ErrorKind::Tag))));
+            let error = nom_parse_error(" ", ErrorKind::Tag);
+            assert_eq!(escaped_space(" "), Err(error));
         }
 
         // Converts `char` \ to `&str` \.
         #[test]
         fn test_escaped_backslash() {
             assert_eq!(escaped_backslash("\\"), Ok(("", "\\")));
-            assert_eq!(escaped_backslash("not a backslash"), Err(nom::Err::Error(("not a backslash", ErrorKind::Char))));
+            let error = nom_parse_error("not a backslash", ErrorKind::Char);
+            assert_eq!(escaped_backslash("not a backslash"), Err(error));
         }
 
         // Recognizes each escape sequence and transforms it to the escaped literal.
@@ -340,7 +350,8 @@ mod parsers {
         #[test]
         fn test_transform_escaped() {
             assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", String::from("abc def\\g h"))));
-            assert_eq!(transform_escaped("\\bad"), Err(nom::Err::Error(("bad", ErrorKind::Tag))));
+            let error = nom_parse_error("bad", ErrorKind::Tag);
+            assert_eq!(transform_escaped("\\bad"), Err(error));
         }
 
         // Parses a comma separated list of mount options, which might contain spaces.
