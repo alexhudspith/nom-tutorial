@@ -1,4 +1,5 @@
-//! Example crate demonstrating how to use nom to parse `/proc/mounts`.  Browse crates.io for sys-mount, proc-mounts, and libmount for more stable, usable crates.
+//! Example crate demonstrating how to use nom to parse `/proc/mounts`.
+//! Browse crates.io for sys-mount, proc-mounts, and libmount for more stable, usable crates.
 
 // Needed to use traits associated with std::io::BufReader.
 use std::io::BufRead;
@@ -26,7 +27,7 @@ pub struct Mount {
 }
 
 /// Implements `Display` for `Mount` to simulate behavior of Unix mount command.
-/// 
+///
 /// # Examples
 /// ```
 /// # use nom_tutorial::Mount;
@@ -45,10 +46,16 @@ impl std::fmt::Display for Mount {
 }
 
 /// Structure that accesses `/proc/mounts` and iterates over the contained mounts.
-/// 
-/// You can generate an instance by calling [Mounts::new()] or the convenience method [mounts()].  Instantiation may fail if `/proc/mounts` does not exist or you do not have access to read it.  You can access each individual mount through an iterator with [Mounts::into_iter()](IntoIterator::into_iter) for a consuming iterator or [Mounts::iter_mut()] for a mutable iterator.  Note that there is no immutable borrowed iterator `Mounts::iter()`.  An instance of `Mounts` really isn't useful for anything except iterating over the contained mounts.
+///
+/// You can generate an instance by calling [Mounts::new()] or the convenience method [mounts()].
+/// Instantiation may fail if `/proc/mounts` does not exist or you do not have access to read it.
+/// You can access each individual mount through an iterator with
+/// [Mounts::into_iter()](IntoIterator::into_iter) for a consuming iterator or [Mounts::iter_mut()]
+/// for a mutable iterator. Note that there is no immutable borrowed iterator `Mounts::iter()`. An
+/// instance of `Mounts` really isn't useful for anything except iterating over the contained
+/// mounts.
+///
 /// # Examples
-/// 
 /// ```
 /// # use nom_tutorial;
 /// for mount in nom_tutorial::mounts().unwrap() {
@@ -59,7 +66,7 @@ pub struct Mounts {
 }
 
 impl Mounts {
-    /// Returns a new Mounts instance.  You can also call [mounts()] for convenience.
+    /// Returns a new Mounts instance. You can also call [mounts()] for convenience.
     pub fn new() -> Result<Mounts, std::io::Error> {
         let file = std::fs::File::open("/proc/mounts")?;
         Ok( Mounts { buf_reader: std::io::BufReader::new(file) } )
@@ -70,7 +77,8 @@ impl IntoIterator for Mounts {
     type Item = Result<Mount, BoxError>;
     type IntoIter = MountsIntoIterator;
 
-    /// Consuming iterator, used similarly to mutable iterator.  See [Mounts::iter_mut()] for example.
+    /// Consuming iterator, used similarly to mutable iterator.
+    /// See [Mounts::iter_mut()] for example.
     fn into_iter(self) -> Self::IntoIter {
         MountsIntoIterator { lines: self.buf_reader.lines() }
     }
@@ -94,7 +102,10 @@ pub struct MountsIntoIterator {
 impl Iterator for MountsIntoIterator {
     type Item = Result<Mount, BoxError>;
 
-    /// Returns the next line in `/proc/mounts` as a [Mount].  If there is a problem reading or parsing `/proc/mounts` returns an error.  In the case of a parsing error we use [nom::Err::to_owned()] to allow the returned error to outlive `line`.  See [Mounts::iter_mut()] for an analagous example using a mutable iterator.
+    /// Returns the next line in `/proc/mounts` as a [Mount]. If there is a problem
+    /// reading or parsing `/proc/mounts`, returns an error. In the case of a parsing
+    /// error we use [nom::Err::to_owned()] to allow the returned error to outlive `line`.
+    /// See [Mounts::iter_mut()] for an analagous example using a mutable iterator.
     fn next(&mut self) -> Option<Self::Item> {
         match self.lines.next() {
             Some(line) => match line {
@@ -117,7 +128,8 @@ pub struct MountsIteratorMut<'a> {
 impl<'a> Iterator for MountsIteratorMut<'a> {
     type Item = Result<Mount, BoxError>;
 
-    // Returns the next line in `/proc/mounts` as a [Mount].  See [Mounts::iter_mut()] for an example.
+    // Returns the next line in `/proc/mounts` as a [Mount].
+    // See [Mounts::iter_mut()] for an example.
     fn next(&mut self) -> Option<Self::Item> {
         match self.lines.next() {
             Some(line) => match line {
@@ -153,11 +165,13 @@ impl<'a> Mounts {
     }
 }
 
-// Encapsulate individual nom parsers in a private submodule.  The `pub(self)` keyword allows the inner method [parsers::parse_line()] to be called by code within this module, but not my users of our crate.
+// Encapsulate individual nom parsers in a private submodule. The `pub(self)` keyword allows the
+// inner method [parsers::parse_line()] to be called by code within this module, but not my users of
+// our crate.
 pub(self) mod parsers {
     use super::Mount;
 
-    // Extract a string that does not contain whitespace (space or tab).  Anything else goes.
+    // Extract a string that does not contain whitespace (space or tab). Anything else goes.
     fn not_whitespace(i: &str) -> nom::IResult<&str, &str> {
         nom::bytes::complete::is_not(" \t")(i)
     }
@@ -167,7 +181,10 @@ pub(self) mod parsers {
         nom::combinator::value(" ", nom::bytes::complete::tag("040"))(i)
     }
 
-    // Replace the escaped sequence \ with a \.  The inner parser `nom::character::complete::char` returns a `char` instead of a `&str`, so we wrap it in a `nom::combinator::recognize`, which returns that `char` as an `&str` if the inner parser succeeds, and returns an error if the inner parser fails.
+    // Replace the escaped sequence \ with a \. The inner parser `nom::character::complete::char`
+    // returns a `char` instead of a `&str`, so we wrap it in a `nom::combinator::recognize`, which
+    // returns that `char` as an `&str` if the inner parser succeeds, and returns an error if the
+    // inner parser fails.
     fn escaped_backslash(i: &str) -> nom::IResult<&str, &str> {
         nom::combinator::recognize(nom::character::complete::char('\\'))(i)
     }
@@ -178,22 +195,38 @@ pub(self) mod parsers {
         nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', nom::branch::alt((escaped_backslash, escaped_space)))(i)
     }
 
-    // Parse the options of a mount into a comma separated vector of strings.  The options string is terminated by a whitespace.
-    // Here we use `nom::combinator::map_parser` to extract the full whitespace-terminated options string and then pass it in to `transform_escaped` to process escaped characters.  Then the transformed string is split into a comma-delimited vector of strings by `nom::multi::separated_list`.
+    // Parse the options of a mount into a comma separated vector of strings. The options string
+    // is terminated by a whitespace. Here we use `nom::combinator::map_parser` to extract the full
+    // whitespace-terminated options string and then pass it in to `transform_escaped` to process
+    // escaped characters. Then the transformed string is split into a comma-delimited vector of
+    // strings by `nom::multi::separated_list`.
     fn mount_opts(i: &str) -> nom::IResult<&str, Vec<String>> {
         nom::multi::separated_list(nom::character::complete::char(','), nom::combinator::map_parser(nom::bytes::complete::is_not(", \t"),transform_escaped))(i)
     }
 
-    // Parse a line from `/proc/mounts` into a Mount struct.  This is perhaps the most complex looking parser, but it is actually one of the simplest because we build upon each of the parsers defined above.  Let's break it down parser by parser:
-    // # `nom::combinator::all_consuming` generates an error if there is any leftover input.  This will force nom to generate an error if there is unexpected input at the end of a line in `/proc/mounts`, for example:
+    // Parse a line from `/proc/mounts` into a Mount struct. This is perhaps the most
+    // complex looking parser, but it is actually one of the simplest because we build upon each of
+    // the parsers defined above. Let's break it down parser by parser:
+    // # `nom::combinator::all_consuming` generates an error if there is any leftover input. This
+    // will force nom to generate an error if there is unexpected input at the end of a line in
+    // `/proc/mounts`, for example:
     // ```ignore
     // /dev/sda1 /mnt/disk ext4 defaults 0 0 this_last_part_shouldn't_be_here
     // ```
     //
-    // `nom::sequence::tuple` generates a `Result<Ok(remaining_input: &str, output_tuple), Error>`.  Although it looks complicated, we can very easily destructure that tuple.  Each sub/inner parser we pass to `nom::sequence::tuple` generates its own element within the tuple.  We can ignore the whitespace by matching it with `_` and destructure the other elements of the tuple as the variabels we are insterested such as `device`, `mount_point`, etc.  If everything goes as planned we return a new instance of the mount `Mount` structure populated with the variables we destructured from the tuple.
+    // `nom::sequence::tuple` generates a `Result<Ok(remaining_input: &str, output_tuple), Error>`.
+    // Although it looks complicated, we can very easily destructure that tuple. Each sub/inner
+    // parser we pass to `nom::sequence::tuple` generates its own element within the tuple. We can
+    // ignore the whitespace by matching it with `_` and destructure the other elements of the
+    // tuple as the variabels we are insterested such as `device`, `mount_point`, etc. If
+    // everything goes as planned we return a new instance of the mount `Mount` structure populated
+    // with the variables we destructured from the tuple.
     // ```ignore
-    // let (device, _, mount_point /*, ...*/)  =  /* tuple returned by all_consuming(tuple()) --> */  ("/dev/sda1", " ", "/mnt/disk" /*, ...*/);
-    // let mount = Mount { device: device.to_string(), mount_point: mount_point.to_string() /*, ...*/ };
+    // let (device, _, mount_point /*, ...*/) = ("/dev/sda1", " ", "/mnt/disk" /*, ...*/);
+    //                                           /* ^- tuple returned by all_consuming(tuple()) */
+    // let mount = Mount {
+    //     device: device.to_string(), mount_point: mount_point.to_string() /*, ...*/
+    // };
     // ```
     pub fn parse_line(i: &str) -> nom::IResult<&str, Mount> {
         match nom::combinator::all_consuming(nom::sequence::tuple((
@@ -235,16 +268,15 @@ pub(self) mod parsers {
         }
     }
 
-    // Alternative version of `parse_line()` above that performs the same
-    // function using a different style.  Rather than parsing the entire line at
-    // once with one big `nom::sequence::tuple` we break the parsing up into
-    // multiple separate statements.  Each statement runs a parser that returns
-    // an `Ok(remaining_input, value)`.  At the end of each statement we have
-    // the `?` operator, which unwraps the result and returns early with an
-    // error if parsing failed.  The remaining input from each parser is used as
-    // the input of each subsequent parser.  Values are assigned to temporary
-    // variables that are used to construct a `Mount` object at the end of the
-    // function.  Values that are not needed are discarded by assigning to `_`.
+    // Alternative version of `parse_line()` above that performs the same function using
+    // a different style. Rather than parsing the entire line at once with one big
+    // `nom::sequence::tuple` we break the parsing up into multiple separate statements.
+    // Each statement runs a parser that returns an `Ok(remaining_input, value)`. At the end of
+    // each statement we have the `?` operator, which unwraps the result and returns early with an
+    // error if parsing failed. The remaining input from each parser is used as the input of each
+    // subsequent parser. Values are assigned to temporary variables that are used to construct a
+    // `Mount` object at the end of the function. Values that are not needed are discarded by
+    // assigning to `_`.
     #[allow(unused)]
     pub fn parse_line_alternate(i: &str) -> nom::IResult<&str, Mount> {
         let (i, device) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // device
@@ -281,7 +313,7 @@ pub(self) mod parsers {
             assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", nom::error::ErrorKind::IsNot))));
         }
 
-        // Converts 040 to a space.  Does not actually recognize a literal space.
+        // Converts 040 to a space. Does not actually recognize a literal space.
         #[test]
         fn test_escaped_space() {
             assert_eq!(escaped_space("040"), Ok(("", " ")));
