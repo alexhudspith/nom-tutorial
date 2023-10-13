@@ -5,24 +5,24 @@ use std::io::BufRead;
 use std::io::Read;
 
 /// Type-erased errors.
-pub type BoxError = std::boxed::Box<dyn
+pub type BoxError = Box<dyn
     std::error::Error   // must implement Error to satisfy ?
-    + std::marker::Send // needed for threads
-    + std::marker::Sync // needed for threads
+    + Send // needed for threads
+    + Sync // needed for threads
 >;
 
 /// Describes a mounted filesystem, see `man 8 mount` for more details.
 #[derive(Clone, Default, Debug)]
 pub struct Mount {
     /// The device from which the filesystem is mounted, e.g. /dev/sda1
-    pub device: std::string::String,
+    pub device: String,
     /// Where in the root filesystem the device is mounted, e.g. /mnt/disk
-    pub mount_point: std::string::String,
+    pub mount_point: String,
     /// The filesystem type, e.g. ext4
-    pub file_system_type: std::string::String,
+    pub file_system_type: String,
     /// A vector of mount options, e.g. ["ro", "nosuid"]
     /// Note: This could also be implemented as a set (e.g. std::collections::HashSet)
-    pub options: std::vec::Vec<std::string::String>,
+    pub options: Vec<String>,
 }
 
 /// Implements `Display` for `Mount` to simulate behavior of Unix mount command.
@@ -30,7 +30,6 @@ pub struct Mount {
 /// # Examples
 /// ```
 /// # use nom_tutorial::Mount;
-/// # use std::string::String;
 /// let mount = Mount {
 ///     device: String::from("/dev/sda1"),
 ///     mount_point: String::from("/mnt/disk"),
@@ -47,7 +46,7 @@ impl std::fmt::Display for Mount {
 
 /// Structure that accesses `/proc/mounts` and iterates over the contained mounts.
 /// 
-/// You can generate an instance by calling [Mounts::new()] or the convenience method [mounts()].  Instantiation may fail if `/proc/mounts` does not exist or you do not have access to read it.  You can access each individual mount through an iterator with [Mounts::into_iter()](std::iter::IntoIterator::into_iter) for a consuming iterator or [Mounts::iter_mut()] for a mutable iterator.  Note that there is no immutable borrowed iterator `Mounts::iter()`.  An instance of `Mounts` really isn't useful for anything except iterating over the contained mounts.
+/// You can generate an instance by calling [Mounts::new()] or the convenience method [mounts()].  Instantiation may fail if `/proc/mounts` does not exist or you do not have access to read it.  You can access each individual mount through an iterator with [Mounts::into_iter()](IntoIterator::into_iter) for a consuming iterator or [Mounts::iter_mut()] for a mutable iterator.  Note that there is no immutable borrowed iterator `Mounts::iter()`.  An instance of `Mounts` really isn't useful for anything except iterating over the contained mounts.
 /// # Examples
 /// 
 /// ```
@@ -61,14 +60,14 @@ pub struct Mounts {
 
 impl Mounts {
     /// Returns a new Mounts instance.  You can also call [mounts()] for convenience.
-    pub fn new() -> std::result::Result<Mounts, std::io::Error> {
+    pub fn new() -> Result<Mounts, std::io::Error> {
         let file = std::fs::File::open("/proc/mounts")?;
         Ok( Mounts { buf_reader: std::io::BufReader::new(file) } )
     }
 }
 
 impl IntoIterator for Mounts {
-    type Item = std::result::Result<Mount, BoxError>;
+    type Item = Result<Mount, BoxError>;
     type IntoIter = MountsIntoIterator;
 
     /// Consuming iterator, used similarly to mutable iterator.  See [Mounts::iter_mut()] for example.
@@ -78,7 +77,7 @@ impl IntoIterator for Mounts {
 }
 
 impl<'a> IntoIterator for &'a mut Mounts {
-    type Item = std::result::Result<Mount, BoxError>;
+    type Item = Result<Mount, BoxError>;
     type IntoIter = MountsIteratorMut<'a>;
 
     /// Mutable iterator, see [Mounts::iter_mut()].
@@ -92,11 +91,11 @@ pub struct MountsIntoIterator {
     lines: std::io::Lines<std::io::BufReader<std::fs::File>>
 }
 
-impl std::iter::Iterator for MountsIntoIterator {
-    type Item = std::result::Result<Mount, BoxError>;
+impl Iterator for MountsIntoIterator {
+    type Item = Result<Mount, BoxError>;
 
     /// Returns the next line in `/proc/mounts` as a [Mount].  If there is a problem reading or parsing `/proc/mounts` returns an error.  In the case of a parsing error we use [nom::Err::to_owned()] to allow the returned error to outlive `line`.  See [Mounts::iter_mut()] for an analagous example using a mutable iterator.
-    fn next(&mut self) -> std::option::Option<Self::Item> {
+    fn next(&mut self) -> Option<Self::Item> {
         match self.lines.next() {
             Some(line) => match line {
                 Ok(line) => match parsers::parse_line(&line[..]) {
@@ -115,11 +114,11 @@ pub struct MountsIteratorMut<'a> {
     lines: std::io::Lines<&'a mut std::io::BufReader<std::fs::File>>
 }
 
-impl<'a> std::iter::Iterator for MountsIteratorMut<'a> {
-    type Item = std::result::Result<Mount, BoxError>;
+impl<'a> Iterator for MountsIteratorMut<'a> {
+    type Item = Result<Mount, BoxError>;
 
     // Returns the next line in `/proc/mounts` as a [Mount].  See [Mounts::iter_mut()] for an example.
-    fn next(&mut self) -> std::option::Option<Self::Item> {
+    fn next(&mut self) -> Option<Self::Item> {
         match self.lines.next() {
             Some(line) => match line {
                 Ok(line) => match parsers::parse_line(&line[..]) {
@@ -175,13 +174,13 @@ pub(self) mod parsers {
 
     // Replace all instances of \040 in a string with a space.
     // Replace \\ with a \.
-    fn transform_escaped(i: &str) -> nom::IResult<&str, std::string::String> {
+    fn transform_escaped(i: &str) -> nom::IResult<&str, String> {
         nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', nom::branch::alt((escaped_backslash, escaped_space)))(i)
     }
 
     // Parse the options of a mount into a comma separated vector of strings.  The options string is terminated by a whitespace.
     // Here we use `nom::combinator::map_parser` to extract the full whitespace-terminated options string and then pass it in to `transform_escaped` to process escaped characters.  Then the transformed string is split into a comma-delimited vector of strings by `nom::multi::separated_list`.
-    fn mount_opts(i: &str) -> nom::IResult<&str, std::vec::Vec<std::string::String>> {
+    fn mount_opts(i: &str) -> nom::IResult<&str, Vec<String>> {
         nom::multi::separated_list(nom::character::complete::char(','), nom::combinator::map_parser(nom::bytes::complete::is_not(", \t"),transform_escaped))(i)
     }
 
@@ -300,7 +299,7 @@ pub(self) mod parsers {
         // For example, each \040 is transformed into a space.
         #[test]
         fn test_transform_escaped() {
-            assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", std::string::String::from("abc def\\g h"))));
+            assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", String::from("abc def\\g h"))));
             assert_eq!(transform_escaped("\\bad"), Err(nom::Err::Error(("bad", nom::error::ErrorKind::Tag))));
         }
 
@@ -345,6 +344,6 @@ pub(self) mod parsers {
 }
 
 /// Convenience method equivalent to `Mounts::new()`.
-pub fn mounts() -> std::result::Result<Mounts, std::io::Error> {
+pub fn mounts() -> Result<Mounts, std::io::Error> {
     Mounts::new()
 }
