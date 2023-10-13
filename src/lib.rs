@@ -95,15 +95,18 @@ mod parsers {
     use nom::bytes::complete::{escaped_transform, is_not, tag};
     use nom::character::complete::{char, space0, space1};
     use nom::combinator::{all_consuming, map_parser, recognize, value};
-    use nom::multi::separated_list;
+    use nom::multi::separated_list0;
     use nom::sequence::tuple;
     use nom::IResult;
 
-    pub type NomError<I> = nom::Err<(I, nom::error::ErrorKind)>;
+    // implements std::error::Error if I: Debug
+    pub type NomError<I> = nom::Err<nom::error::Error<I>>;
 
+    /// Returns a `std::error::Error` (impl) for a parsing error
     #[inline(always)]
     fn nom_parse_error<I>(input: I, kind: nom::error::ErrorKind) -> NomError<I> {
-        nom::Err::Error((input, kind))
+        let inner: nom::error::Error<I> = nom::error::make_error(input, kind);
+        nom::Err::Error(inner)
     }
 
     /// Extracts a string that does not contain whitespace (space or tab). Anything else goes.
@@ -138,7 +141,7 @@ mod parsers {
     /// escaped characters. Then the transformed string is split into a comma-delimited vector of
     /// strings by `nom::multi::separated_list`.
     fn mount_opts(i: &str) -> IResult<&str, Vec<String>> {
-        separated_list(
+        separated_list0(
             char(','),
             map_parser(is_not(", \t"), transform_escaped)
         )(i)
