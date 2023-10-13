@@ -170,29 +170,36 @@ impl<'a> Mounts {
 // of our crate.
 pub(self) mod parsers {
     use super::Mount;
+    use nom::branch::alt;
+    use nom::bytes::complete::{escaped_transform, is_not, tag};
+    use nom::character::complete::{char, space0, space1};
+    use nom::combinator::{all_consuming, map_parser, recognize, value};
+    use nom::IResult;
+    use nom::multi::separated_list;
+    use nom::sequence::tuple;
 
     /// Extracts a string that does not contain whitespace (space or tab). Anything else goes.
-    fn not_whitespace(i: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::is_not(" \t")(i)
+    fn not_whitespace(i: &str) -> IResult<&str, &str> {
+        is_not(" \t")(i)
     }
 
     /// Replaces the sequence 040 with a space.
-    fn escaped_space(i: &str) -> nom::IResult<&str, &str> {
-        nom::combinator::value(" ", nom::bytes::complete::tag("040"))(i)
+    fn escaped_space(i: &str) -> IResult<&str, &str> {
+        value(" ", tag("040"))(i)
     }
 
     /// Replaces the escaped sequence \ with a \. The inner parser `nom::character::complete::char`
     /// returns a `char` instead of a `&str`, so we wrap it in a `nom::combinator::recognize`, which
     /// returns that `char` as an `&str` if the inner parser succeeds, and returns an error if the
     /// inner parser fails.
-    fn escaped_backslash(i: &str) -> nom::IResult<&str, &str> {
-        nom::combinator::recognize(nom::character::complete::char('\\'))(i)
+    fn escaped_backslash(i: &str) -> IResult<&str, &str> {
+        recognize(char('\\'))(i)
     }
 
     /// Replaces all instances of \040 in a string with a space.
     /// Replaces \\ with a \.
-    fn transform_escaped(i: &str) -> nom::IResult<&str, String> {
-        nom::bytes::complete::escaped_transform(nom::bytes::complete::is_not("\\"), '\\', nom::branch::alt((escaped_backslash, escaped_space)))(i)
+    fn transform_escaped(i: &str) -> IResult<&str, String> {
+        escaped_transform(is_not("\\"), '\\', alt((escaped_backslash, escaped_space)))(i)
     }
 
     /// Parses the options of a mount into a comma separated vector of strings. The options string
@@ -200,8 +207,8 @@ pub(self) mod parsers {
     /// whitespace-terminated options string and then pass it in to `transform_escaped` to process
     /// escaped characters. Then the transformed string is split into a comma-delimited vector of
     /// strings by `nom::multi::separated_list`.
-    fn mount_opts(i: &str) -> nom::IResult<&str, Vec<String>> {
-        nom::multi::separated_list(nom::character::complete::char(','), nom::combinator::map_parser(nom::bytes::complete::is_not(", \t"),transform_escaped))(i)
+    fn mount_opts(i: &str) -> IResult<&str, Vec<String>> {
+        separated_list(char(','), map_parser(is_not(", \t"),transform_escaped))(i)
     }
 
     /// Parses a line from `/proc/mounts` into a Mount struct. This is perhaps the most
@@ -228,20 +235,20 @@ pub(self) mod parsers {
     ///     device: device.to_string(), mount_point: mount_point.to_string() /*, ...*/
     /// };
     /// ```
-    pub fn parse_line(i: &str) -> nom::IResult<&str, Mount> {
-        match nom::combinator::all_consuming(nom::sequence::tuple((
-            nom::combinator::map_parser(not_whitespace, transform_escaped), // device
-            nom::character::complete::space1,
-            nom::combinator::map_parser(not_whitespace, transform_escaped), // mount_point
-            nom::character::complete::space1,
+    pub fn parse_line(i: &str) -> IResult<&str, Mount> {
+        match all_consuming(tuple((
+            map_parser(not_whitespace, transform_escaped), // device
+            space1,
+            map_parser(not_whitespace, transform_escaped), // mount_point
+            space1,
             not_whitespace, // file_system_type
-            nom::character::complete::space1,
+            space1,
             mount_opts, // options
-            nom::character::complete::space1,
-            nom::character::complete::char('0'),
-            nom::character::complete::space1,
-            nom::character::complete::char('0'),
-            nom::character::complete::space0,
+            space1,
+            char('0'),
+            space1,
+            char('0'),
+            space0,
         )))(i) {
                 Ok((remaining_input, (
                 device,
@@ -278,20 +285,20 @@ pub(self) mod parsers {
     /// `Mount` object at the end of the function. Values that are not needed are discarded by
     /// assigning to `_`.
     #[allow(unused)]
-    pub fn parse_line_alternate(i: &str) -> nom::IResult<&str, Mount> {
-        let (i, device) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // device
-        let (i, _) = nom::character::complete::space1(i)?;
-        let (i, mount_point) = nom::combinator::map_parser(not_whitespace, transform_escaped)(i)?; // mount_point
-        let (i, _) = nom::character::complete::space1(i)?;
+    pub fn parse_line_alternate(i: &str) -> IResult<&str, Mount> {
+        let (i, device) = map_parser(not_whitespace, transform_escaped)(i)?; // device
+        let (i, _) = space1(i)?;
+        let (i, mount_point) = map_parser(not_whitespace, transform_escaped)(i)?; // mount_point
+        let (i, _) = space1(i)?;
         let (i, file_system_type) = not_whitespace(i)?; // file_system_type
-        let (i, _) = nom::character::complete::space1(i)?;
+        let (i, _) = space1(i)?;
         let (i, options) = mount_opts(i)?; // options
-        let (i, _) = nom::combinator::all_consuming(nom::sequence::tuple((
-            nom::character::complete::space1,
-            nom::character::complete::char('0'),
-            nom::character::complete::space1,
-            nom::character::complete::char('0'),
-            nom::character::complete::space0
+        let (i, _) = all_consuming(tuple((
+            space1,
+            char('0'),
+            space1,
+            char('0'),
+            space0
         )))(i)?;
         Ok((i, Mount {
             device: device,
@@ -303,6 +310,7 @@ pub(self) mod parsers {
 
     #[cfg(test)]
     mod tests {
+        use nom::error::ErrorKind;
         use super::*;
 
         // Extracts a string that does not contain whitespace, i.e. comma or tab.
@@ -310,21 +318,21 @@ pub(self) mod parsers {
         fn test_not_whitespace() {
             assert_eq!(not_whitespace("abcd efg"), Ok((" efg", "abcd")));
             assert_eq!(not_whitespace("abcd\tefg"), Ok(("\tefg", "abcd")));
-            assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", nom::error::ErrorKind::IsNot))));
+            assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", ErrorKind::IsNot))));
         }
 
         // Converts 040 to a space. Does not actually recognize a literal space.
         #[test]
         fn test_escaped_space() {
             assert_eq!(escaped_space("040"), Ok(("", " ")));
-            assert_eq!(escaped_space(" "), Err(nom::Err::Error((" ", nom::error::ErrorKind::Tag))));
+            assert_eq!(escaped_space(" "), Err(nom::Err::Error((" ", ErrorKind::Tag))));
         }
 
         // Converts `char` \ to `&str` \.
         #[test]
         fn test_escaped_backslash() {
             assert_eq!(escaped_backslash("\\"), Ok(("", "\\")));
-            assert_eq!(escaped_backslash("not a backslash"), Err(nom::Err::Error(("not a backslash", nom::error::ErrorKind::Char))));
+            assert_eq!(escaped_backslash("not a backslash"), Err(nom::Err::Error(("not a backslash", ErrorKind::Char))));
         }
 
         // Recognizes each escape sequence and transforms it to the escaped literal.
@@ -332,7 +340,7 @@ pub(self) mod parsers {
         #[test]
         fn test_transform_escaped() {
             assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", String::from("abc def\\g h"))));
-            assert_eq!(transform_escaped("\\bad"), Err(nom::Err::Error(("bad", nom::error::ErrorKind::Tag))));
+            assert_eq!(transform_escaped("\\bad"), Err(nom::Err::Error(("bad", ErrorKind::Tag))));
         }
 
         // Parses a comma separated list of mount options, which might contain spaces.
