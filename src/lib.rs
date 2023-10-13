@@ -6,11 +6,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines};
 
 /// Type-erased errors.
-pub type BoxError = Box<dyn
-    std::error::Error   // must implement Error to satisfy ?
-    + Send // needed for threads
-    + Sync // needed for threads
->;
+// Must implement Error to satisfy ? syntax; Send + Sync for threads
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Describes a mounted filesystem, see `man 8 mount` for more details.
 #[derive(Clone, Default, Debug)]
@@ -41,7 +38,14 @@ pub struct Mount {
 /// ```
 impl std::fmt::Display for Mount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} on {} type {} ({})", self.device, self.mount_point, self.file_system_type, self.options.join(","))
+        write!(
+            f,
+            "{} on {} type {} ({})",
+            self.device,
+            self.mount_point,
+            self.file_system_type,
+            self.options.join(",")
+        )
     }
 }
 
@@ -49,14 +53,15 @@ impl std::fmt::Display for Mount {
 ///
 /// See [mounts()] for details.
 pub struct Mounts {
-    lines: Lines<BufReader<File>>
+    lines: Lines<BufReader<File>>,
 }
 
 impl Mounts {
     /// Returns a new Mounts instance (private).
     fn new() -> Result<Mounts, io::Error> {
         let file = File::open("/proc/mounts")?;
-        Ok( Mounts { lines: BufReader::new(file).lines() } )
+        let lines = BufReader::new(file).lines();
+        Ok(Mounts { lines })
     }
 }
 
@@ -89,9 +94,9 @@ mod parsers {
     use nom::bytes::complete::{escaped_transform, is_not, tag};
     use nom::character::complete::{char, space0, space1};
     use nom::combinator::{all_consuming, map_parser, recognize, value};
-    use nom::IResult;
     use nom::multi::separated_list;
     use nom::sequence::tuple;
+    use nom::IResult;
 
     type NomError<I> = nom::Err<(I, nom::error::ErrorKind)>;
 
@@ -121,7 +126,9 @@ mod parsers {
     /// Replaces all instances of \040 in a string with a space.
     /// Replaces \\ with a \.
     fn transform_escaped(i: &str) -> IResult<&str, String> {
-        escaped_transform(is_not("\\"), '\\', alt((escaped_backslash, escaped_space)))(i)
+        escaped_transform(
+            is_not("\\"), '\\', alt((escaped_backslash, escaped_space))
+        )(i)
     }
 
     /// Parses the options of a mount into a comma separated vector of strings. The options string
@@ -130,7 +137,10 @@ mod parsers {
     /// escaped characters. Then the transformed string is split into a comma-delimited vector of
     /// strings by `nom::multi::separated_list`.
     fn mount_opts(i: &str) -> IResult<&str, Vec<String>> {
-        separated_list(char(','), map_parser(is_not(", \t"),transform_escaped))(i)
+        separated_list(
+            char(','),
+            map_parser(is_not(", \t"), transform_escaped)
+        )(i)
     }
 
     /// Parses a line from `/proc/mounts` into a Mount struct. This is perhaps the most
@@ -158,7 +168,7 @@ mod parsers {
     /// };
     /// ```
     pub fn parse_line(i: &str) -> IResult<&str, Mount> {
-        match all_consuming(tuple((
+        let mut parser = all_consuming(tuple((
             map_parser(not_whitespace, transform_escaped), // device
             space1,
             map_parser(not_whitespace, transform_escaped), // mount_point
@@ -171,29 +181,14 @@ mod parsers {
             space1,
             char('0'),
             space0,
-        )))(i) {
-                Ok((remaining_input, (
-                device,
-                _, // whitespace
-                mount_point,
-                _, // whitespace
-                file_system_type,
-                _, // whitespace
-                options,
-                _, // whitespace
-                _, // 0
-                _, // whitespace
-                _, // 0
-                _, // optional whitespace
-            ))) => {
-                Ok((remaining_input, Mount {
-                    device: device,
-                    mount_point: mount_point,
-                    file_system_type: file_system_type.to_string(),
-                    options: options
-                }))
+        )));
+
+        match parser(i) {
+            Ok((i, (device, _, mount_point, _, file_system_type, _, options, ..))) => {
+                let file_system_type = file_system_type.to_string();
+                Ok((i, Mount { device, mount_point, file_system_type, options }))
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
@@ -207,7 +202,7 @@ mod parsers {
     /// `Mount` object at the end of the function. Values that are not needed are discarded by
     /// assigning to `_`.
     #[allow(unused)]
-    pub fn parse_line_alternate(i: &str) -> IResult<&str, Mount> {
+    pub fn parse_line_alt(i: &str) -> IResult<&str, Mount> {
         let (i, device) = map_parser(not_whitespace, transform_escaped)(i)?; // device
         let (i, _) = space1(i)?;
         let (i, mount_point) = map_parser(not_whitespace, transform_escaped)(i)?; // mount_point
@@ -215,25 +210,18 @@ mod parsers {
         let (i, file_system_type) = not_whitespace(i)?; // file_system_type
         let (i, _) = space1(i)?;
         let (i, options) = mount_opts(i)?; // options
-        let (i, _) = all_consuming(tuple((
-            space1,
-            char('0'),
-            space1,
-            char('0'),
-            space0
-        )))(i)?;
-        Ok((i, Mount {
-            device: device,
-            mount_point: mount_point,
-            file_system_type: file_system_type.to_string(),
-            options:options
-        }))
+        let (i, _) = all_consuming(
+            tuple((space1, char('0'), space1, char('0'), space0))
+        )(i)?;
+
+        let file_system_type = file_system_type.to_string();
+        Ok((i, Mount { device, mount_point, file_system_type, options }))
     }
 
     #[cfg(test)]
     mod tests {
-        use nom::error::ErrorKind;
         use super::*;
+        use nom::error::ErrorKind;
 
         // Extracts a string that does not contain whitespace, i.e. comma or tab.
         #[test]
@@ -264,7 +252,10 @@ mod parsers {
         // For example, each \040 is transformed into a space.
         #[test]
         fn test_transform_escaped() {
-            assert_eq!(transform_escaped("abc\\040def\\\\g\\040h"), Ok(("", String::from("abc def\\g h"))));
+            assert_eq!(
+                transform_escaped("abc\\040def\\\\g\\040h"),
+                Ok(("", String::from("abc def\\g h")))
+            );
             let error = nom_parse_error("bad", ErrorKind::Tag);
             assert_eq!(transform_escaped("\\bad"), Err(error));
         }
@@ -272,19 +263,33 @@ mod parsers {
         // Parses a comma separated list of mount options, which might contain spaces.
         #[test]
         fn test_mount_opts() {
-            assert_eq!(mount_opts("a,bc,d\\040e"), Ok(("", vec!["a".to_string(), "bc".to_string(), "d e".to_string()])));
+            assert_eq!(
+                mount_opts("a,bc,d\\040e"),
+                Ok(("", vec![
+                    "a".to_string(),
+                    "bc".to_string(),
+                    "d e".to_string()
+                ]))
+            );
         }
 
         // Parses a line from /proc/mounts
         #[test]
         fn test_parse_line() {
-            let mount1 = Mount{
+            let mount1 = Mount {
                 device: "device".to_string(),
                 mount_point: "mount_point".to_string(),
                 file_system_type: "file_system_type".to_string(),
-                options: vec!["options".to_string(), "a".to_string(), "b=c".to_string(), "d e".to_string()]
+                options: vec![
+                    "options".to_string(),
+                    "a".to_string(),
+                    "b=c".to_string(),
+                    "d e".to_string(),
+                ],
             };
-            let (_, mount2) = parse_line("device mount_point file_system_type options,a,b=c,d\\040e 0 0").unwrap();
+            let (_, mount2) =
+                parse_line("device mount_point file_system_type options,a,b=c,d\\040e 0 0")
+                    .unwrap();
             assert_eq!(mount1.device, mount2.device);
             assert_eq!(mount1.mount_point, mount2.mount_point);
             assert_eq!(mount1.file_system_type, mount2.file_system_type);
@@ -293,14 +298,21 @@ mod parsers {
 
         // Parses a line from /proc/mounts
         #[test]
-        fn test_parse_line_alternate() {
-            let mount1 = Mount{
+        fn test_parse_line_alt() {
+            let mount1 = Mount {
                 device: "device".to_string(),
                 mount_point: "mount_point".to_string(),
                 file_system_type: "file_system_type".to_string(),
-                options: vec!["options".to_string(), "a".to_string(), "b=c".to_string(), "d e".to_string()]
+                options: vec![
+                    "options".to_string(),
+                    "a".to_string(),
+                    "b=c".to_string(),
+                    "d e".to_string(),
+                ],
             };
-            let (_, mount2) = parse_line_alternate("device mount_point file_system_type options,a,b=c,d\\040e 0 0").unwrap();
+            let (_, mount2) =
+                parse_line_alt("device mount_point file_system_type options,a,b=c,d\\040e 0 0")
+                    .unwrap();
             assert_eq!(mount1.device, mount2.device);
             assert_eq!(mount1.mount_point, mount2.mount_point);
             assert_eq!(mount1.file_system_type, mount2.file_system_type);
